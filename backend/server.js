@@ -21,10 +21,11 @@ app.use(express.json());
 
 // MySQL connection setup
 const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
+  host: "localhost",
+  user: "root",
+  password: "1234",
+  database: "test",
+  port: 3305,
 });
 
 db.connect((err) => {
@@ -57,7 +58,7 @@ app.post("/login", (req, res) => {
   }
 
   // Check if the user exists in the database
-  const query = "SELECT * FROM users WHERE email = ?";
+  const query = "SELECT * FROM test.user WHERE email = ?";
   db.query(query, [email], (err, results) => {
     if (err) {
       return res.status(500).json({ message: "Database error", error: err });
@@ -114,7 +115,7 @@ app.post("/register", (req, res) => {
   }
 
   // Check if the user already exists in the database
-  const checkUserQuery = "SELECT * FROM users WHERE email = ?";
+  const checkUserQuery = "SELECT * FROM test.user WHERE email = ?";
   db.query(checkUserQuery, [email], (err, results) => {
     if (err) {
       return res.status(500).json({ message: "Database error", error: err });
@@ -137,7 +138,7 @@ app.post("/register", (req, res) => {
 
       // Insert the new user into the database
       const insertUserQuery =
-        "INSERT INTO users (name, email, password) VALUES (?, ?, ?)";
+        "INSERT INTO test.user (name, email, password) VALUES (?, ?, ?)";
       db.query(
         insertUserQuery,
         [name, email, hashedPassword],
@@ -170,6 +171,47 @@ io.on("connection", (socket) => {
   console.log(`Socket Connected`, socket.id);
   socket.on("room:join", (data) => {
     const { email, room } = data;
+    let date = returnDate();
+    const checkUserQuery = `SELECT * FROM test.user WHERE email = '${email}'`;
+    new Promise((resolve, reject) => {
+      db.query(checkUserQuery, (error, result) => {
+        if (error) {
+          reject(error); // Reject the promise if there's an error
+        } else {
+          resolve(result); // Resolve the promise with the result if successful
+        }
+      });
+    })
+      .then((result) => {
+        if (result.length > 0) {
+          const updateQuery = `UPDATE  test.user set logs=${JSON.stringify([
+            date,
+          ])} where email= ${email}`;
+          db.query(updateQuery, (error, result) => {
+            if (error) {
+              reject(error); // Reject the promise if there's an error
+            } else {
+              resolve(result); // Resolve the promise with the result if successful
+            }
+          });
+        } else {
+          const insertUserQuery = `INSERT INTO test.user (email,logs) VALUES (${email}, ${JSON.stringify(
+            [date]
+          )})`;
+          db.query(insertUserQuery, (error, result) => {
+            if (error) {
+              reject(error); // Reject the promise if there's an error
+            } else {
+              resolve(result); // Resolve the promise with the result if successful
+            }
+          });
+        }
+        console.log("Database query result:", result); // Print the result of the query
+      })
+      .catch((error) => {
+        console.error("Error executing query:", error); // Log the error if the query fails
+      });
+
     emailToSocketIdMap.set(email, socket.id);
     socketidToEmailMap.set(socket.id, email);
     io.to(room).emit("user:joined", { email, id: socket.id });
@@ -195,6 +237,21 @@ io.on("connection", (socket) => {
     io.to(to).emit("peer:nego:final", { from: socket.id, ans });
   });
 });
+
+function returnDate() {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  let mm = today.getMonth() + 1; // Months start at 0!
+  let dd = today.getDate();
+  let hh = today.getHours();
+  let min = today.getMinutes();
+
+  if (dd < 10) dd = "0" + dd;
+  if (mm < 10) mm = "0" + mm;
+
+  const formattedToday = `${dd}-${mm}-${yyyy}-${hh}:${min}`;
+  return formattedToday;
+}
 
 // Start server
 server.listen(5000, () => {
